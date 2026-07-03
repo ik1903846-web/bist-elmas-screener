@@ -22,16 +22,27 @@ st.caption("Dip bölgesi, sıkışma, momentum dönüşü ve trend teyidi arayan
 # SYMBOL LIST
 # =========================
 
-BIST_SYMBOLS = [
-    "THYAO.IS", "ASELS.IS", "KCHOL.IS", "SISE.IS", "TUPRS.IS",
-    "AKBNK.IS", "GARAN.IS", "YKBNK.IS", "ISCTR.IS", "SAHOL.IS",
-    "SASA.IS", "HEKTS.IS", "EREGL.IS", "KRDMD.IS", "BIMAS.IS",
-    "FROTO.IS", "TOASO.IS", "DOAS.IS", "KONTR.IS", "ASTOR.IS",
-    "PASEU.IS", "ALARK.IS", "ENKAI.IS", "PETKM.IS", "KOZAL.IS",
-    "PGSUS.IS", "TAVHL.IS", "TCELL.IS", "TTKOM.IS", "OYAKC.IS",
-    "GUBRF.IS", "ODAS.IS", "CANTE.IS", "SMRTG.IS", "GESAN.IS",
-    "KCAER.IS", "CWENE.IS", "MIATK.IS", "EUPWR.IS", "QUAGR.IS"
-]
+@st.cache_data(ttl=60 * 60)
+def load_symbols():
+    try:
+        symbols_df = pd.read_csv("symbols.csv")
+        symbols = symbols_df["symbol"].dropna().astype(str).tolist()
+        symbols = [s.strip().upper() for s in symbols if s.strip()]
+        return symbols
+    except Exception:
+        return [
+            "THYAO.IS", "ASELS.IS", "KCHOL.IS", "SISE.IS", "TUPRS.IS",
+            "AKBNK.IS", "GARAN.IS", "YKBNK.IS", "ISCTR.IS", "SAHOL.IS",
+            "SASA.IS", "HEKTS.IS", "EREGL.IS", "KRDMD.IS", "BIMAS.IS",
+            "FROTO.IS", "TOASO.IS", "DOAS.IS", "KONTR.IS", "ASTOR.IS",
+            "PASEU.IS", "ALARK.IS", "ENKAI.IS", "PETKM.IS", "KOZAL.IS",
+            "PGSUS.IS", "TAVHL.IS", "TCELL.IS", "TTKOM.IS", "OYAKC.IS",
+            "GUBRF.IS", "ODAS.IS", "CANTE.IS", "SMRTG.IS", "GESAN.IS",
+            "KCAER.IS", "CWENE.IS", "MIATK.IS", "EUPWR.IS", "QUAGR.IS"
+        ]
+
+
+BIST_SYMBOLS = load_symbols()
 
 
 # =========================
@@ -43,14 +54,15 @@ with st.sidebar:
 
     interval_label = st.selectbox(
         "Periyot",
-        ["Günlük", "Haftalık", "Aylık"]
+        ["Günlük", "Haftalık", "Aylık"],
+        index=1
     )
 
     min_score = st.slider(
         "Minimum Elmas Skoru",
         min_value=0,
         max_value=100,
-        value=50
+        value=40
     )
 
     selected_symbol = st.selectbox(
@@ -60,6 +72,11 @@ with st.sidebar:
 
     show_only_elmas = st.checkbox(
         "Sadece Elmas sinyali olanları göster",
+        value=False
+    )
+
+    show_only_white_angel = st.checkbox(
+        "Sadece White Angel sinyali olanları göster",
         value=False
     )
 
@@ -77,19 +94,65 @@ interval = interval_map[interval_label]
 
 
 # =========================
+# PERIOD SETTINGS
+# =========================
+
+def get_period_settings(interval):
+    """
+    Günlük/Haftalık:
+    MA14 / MA50 / MA200
+
+    Aylık:
+    MA6 / MA12 / MA24
+    """
+
+    if interval == "1mo":
+        return {
+            "data_period": "10y",
+            "fast_len": 6,
+            "mid_len": 12,
+            "long_len": 24,
+            "std_len": 24,
+            "range_len": 12,
+            "momentum_len": 6,
+            "min_bars": 36,
+            "fast_name": "MA6",
+            "mid_name": "MA12",
+            "long_name": "MA24",
+            "perf_name": "24 Bar Perf %",
+        }
+
+    return {
+        "data_period": "5y",
+        "fast_len": 14,
+        "mid_len": 50,
+        "long_len": 200,
+        "std_len": 50,
+        "range_len": 20,
+        "momentum_len": 14,
+        "min_bars": 220,
+        "fast_name": "MA14",
+        "mid_name": "MA50",
+        "long_name": "MA200",
+        "perf_name": "60 Bar Perf %",
+    }
+
+
+settings = get_period_settings(interval)
+
+
+# =========================
 # DATA
 # =========================
 
 @st.cache_data(ttl=60 * 60)
-@st.cache_data(ttl=60 * 60)
 def get_data(symbol, interval):
     try:
-        # Aylıkta daha fazla yıl çekiyoruz ki 24 aylık/50 aylık yapılar rahat hesaplansın.
-        data_period = "10y" if interval == "1mo" else "5y"
+        period_settings = get_period_settings(interval)
 
         df = yf.download(
             symbol,
-            period=data_period,
+            period=period_settings["data_period"],
             interval=interval,
             progress=False,
             auto_adjust=True,
@@ -122,68 +185,78 @@ def get_data(symbol, interval):
 
 def calculate_indicators(df):
     data = df.copy()
+    period_settings = get_period_settings(interval)
 
-    data["MA14"] = data["Close"].rolling(14).mean()
-    data["MA50"] = data["Close"].rolling(50).mean()
-    data["MA200"] = data["Close"].rolling(200).mean()
+    fast_len = period_settings["fast_len"]
+    mid_len = period_settings["mid_len"]
+    long_len = period_settings["long_len"]
+    std_len = period_settings["std_len"]
+    range_len = period_settings["range_len"]
+    momentum_len = period_settings["momentum_len"]
 
-    data["STD50"] = data["Close"].rolling(50).std()
-    data["Upper"] = data["MA50"] + 2 * data["STD50"]
-    data["Lower"] = data["MA50"] - 2 * data["STD50"]
+    data["MA_FAST"] = data["Close"].rolling(fast_len).mean()
+    data["MA_MID"] = data["Close"].rolling(mid_len).mean()
+    data["MA_LONG"] = data["Close"].rolling(long_len).mean()
 
-    data["Momentum14"] = data["Close"] / data["Close"].shift(14) - 1
-    data["Perf60"] = data["Close"] / data["Close"].shift(60) - 1
+    data["STD"] = data["Close"].rolling(std_len).std()
+    data["Upper"] = data["MA_MID"] + 2 * data["STD"]
+    data["Lower"] = data["MA_MID"] - 2 * data["STD"]
 
-    data["Range20"] = (
-        data["High"].rolling(20).max() - data["Low"].rolling(20).min()
+    data["Momentum"] = data["Close"] / data["Close"].shift(momentum_len) - 1
+
+    perf_len = 24 if interval == "1mo" else 60
+    data["Performance"] = data["Close"] / data["Close"].shift(perf_len) - 1
+
+    data["Range"] = (
+        data["High"].rolling(range_len).max() - data["Low"].rolling(range_len).min()
     ) / data["Close"]
 
-    # Dip skoru
+    # Dip skoru: fiyat alt banda yaklaştıkça yükselir
     data["DipScoreRaw"] = 100 - (((data["Close"] - data["Lower"]) / data["Close"]) * 250)
     data["DipScoreRaw"] = data["DipScoreRaw"].clip(0, 100)
 
-    # Sıkışma skoru
-    data["SqueezeScoreRaw"] = 100 - (data["Range20"] * 250)
+    # Sıkışma skoru: range daraldıkça yükselir
+    data["SqueezeScoreRaw"] = 100 - (data["Range"] * 250)
     data["SqueezeScoreRaw"] = data["SqueezeScoreRaw"].clip(0, 100)
 
     # Momentum skoru
-    data["MomentumScoreRaw"] = 50 + (data["Momentum14"] * 250)
+    data["MomentumScoreRaw"] = 50 + (data["Momentum"] * 250)
     data["MomentumScoreRaw"] = data["MomentumScoreRaw"].clip(0, 100)
 
-    # MA14 yönü
-    data["MA14Up"] = data["MA14"] > data["MA14"].shift(1)
+    # Ortalama yönü
+    data["MAFastUp"] = data["MA_FAST"] > data["MA_FAST"].shift(1)
 
-    # Golden Cross
-    data["GoldenCross"] = data["MA50"] > data["MA200"]
+    # Golden Cross benzeri: orta ortalama uzun ortalamanın üstünde
+    data["GoldenCross"] = data["MA_MID"] > data["MA_LONG"]
 
     # Dip sinyali
     data["DipSignal"] = (
         (data["DipScoreRaw"] >= 65) &
-        (data["Close"] <= data["MA50"] * 1.15)
+        (data["Close"] <= data["MA_MID"] * 1.15)
     )
 
     # Momentum dönüş sinyali
     data["MomentumSignal"] = (
-        (data["Close"] > data["MA14"]) &
-        (data["MA14Up"]) &
-        (data["Momentum14"] > 0)
+        (data["Close"] > data["MA_FAST"]) &
+        (data["MAFastUp"]) &
+        (data["Momentum"] > 0)
     )
 
     # White Angel benzeri toparlanma sinyali
     data["WhiteAngelSignal"] = (
-        (data["Close"] > data["MA14"]) &
-        (data["MA14Up"]) &
-        (data["Momentum14"] > 0) &
-        (data["Close"] < data["MA50"] * 1.20)
+        (data["Close"] > data["MA_FAST"]) &
+        (data["MAFastUp"]) &
+        (data["Momentum"] > 0) &
+        (data["Close"] < data["MA_MID"] * 1.20)
     )
 
     # Elmas sinyali
     data["ElmasSignal"] = (
         (data["DipScoreRaw"] >= 55) &
         (data["SqueezeScoreRaw"] >= 40) &
-        (data["Momentum14"] > 0) &
-        (data["Close"] > data["MA14"]) &
-        (data["MA14Up"])
+        (data["Momentum"] > 0) &
+        (data["Close"] > data["MA_FAST"]) &
+        (data["MAFastUp"])
     )
 
     return data
@@ -195,31 +268,30 @@ def calculate_indicators(df):
 
 def analyze_symbol(symbol):
     df = get_data(symbol, interval)
+    period_settings = get_period_settings(interval)
 
-    if df.empty or len(df) < 220:
+    if df.empty or len(df) < period_settings["min_bars"]:
         return None
 
     df = calculate_indicators(df).dropna()
 
-    if df.empty:
+    if df.empty or len(df) < 2:
         return None
 
     last = df.iloc[-1]
-    prev = df.iloc[-2]
 
     close = float(last["Close"])
-    ma14 = float(last["MA14"])
-    ma50 = float(last["MA50"])
-    ma200 = float(last["MA200"])
-    lower = float(last["Lower"])
-    momentum14 = float(last["Momentum14"])
-    perf60 = float(last["Perf60"])
+    ma_fast = float(last["MA_FAST"])
+    ma_mid = float(last["MA_MID"])
+    momentum = float(last["Momentum"])
+    performance = float(last["Performance"])
+
     dip_score = float(last["DipScoreRaw"])
     squeeze_score = float(last["SqueezeScoreRaw"])
     momentum_score = float(last["MomentumScoreRaw"])
 
     golden_cross = bool(last["GoldenCross"])
-    ma14_up = bool(last["MA14Up"])
+    ma_fast_up = bool(last["MAFastUp"])
     white_angel = bool(last["WhiteAngelSignal"])
     elmas_signal = bool(last["ElmasSignal"])
     dip_signal = bool(last["DipSignal"])
@@ -233,13 +305,13 @@ def analyze_symbol(symbol):
     if squeeze_score >= 50:
         cluster += 1
 
-    if momentum14 > 0:
+    if momentum > 0:
         cluster += 1
 
-    if close > ma14:
+    if close > ma_fast:
         cluster += 1
 
-    if ma14_up:
+    if ma_fast_up:
         cluster += 1
 
     if golden_cross:
@@ -275,8 +347,10 @@ def analyze_symbol(symbol):
         "Elmas Skoru": round(elmas_score, 1),
         "Dip Skoru": round(dip_score, 1),
         "Sıkışma": round(squeeze_score, 1),
-        "Momentum 14 %": round(momentum14 * 100, 2),
-        "60 Bar Perf %": round(perf60 * 100, 2),
+        "Momentum %": round(momentum * 100, 2),
+        period_settings["perf_name"]: round(performance * 100, 2),
+        period_settings["fast_name"]: round(ma_fast, 2),
+        period_settings["mid_name"]: round(ma_mid, 2),
         "Golden Cross": "Evet" if golden_cross else "Hayır",
         "White Angel": "Evet" if white_angel else "Hayır",
         "Dip": "Evet" if dip_signal else "Hayır",
@@ -292,6 +366,7 @@ def analyze_symbol(symbol):
 
 def make_chart(symbol):
     df = get_data(symbol, interval)
+    period_settings = get_period_settings(interval)
 
     if df.empty:
         st.warning("Veri alınamadı.")
@@ -316,22 +391,22 @@ def make_chart(symbol):
 
     fig.add_trace(go.Scatter(
         x=df.index,
-        y=df["MA14"],
-        name="MA14",
+        y=df["MA_FAST"],
+        name=period_settings["fast_name"],
         mode="lines"
     ))
 
     fig.add_trace(go.Scatter(
         x=df.index,
-        y=df["MA50"],
-        name="MA50",
+        y=df["MA_MID"],
+        name=period_settings["mid_name"],
         mode="lines"
     ))
 
     fig.add_trace(go.Scatter(
         x=df.index,
-        y=df["MA200"],
-        name="MA200",
+        y=df["MA_LONG"],
+        name=period_settings["long_name"],
         mode="lines"
     ))
 
@@ -353,8 +428,8 @@ def make_chart(symbol):
 
     dip_points = df[df["DipSignal"]]
     momentum_points = df[df["MomentumSignal"]]
-    elmas_points = df[df["ElmasSignal"]]
     white_angel_points = df[df["WhiteAngelSignal"]]
+    elmas_points = df[df["ElmasSignal"]]
 
     fig.add_trace(go.Scatter(
         x=dip_points.index,
@@ -390,11 +465,13 @@ def make_chart(symbol):
         marker=dict(size=13, symbol="diamond")
     ))
 
+    title_text = f"{symbol.replace('.IS', '')} - {interval_label}"
+
     fig.update_layout(
         height=700,
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
-        title=symbol.replace(".IS", ""),
+        title=title_text,
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -424,7 +501,7 @@ with st.spinner("BIST hisseleri taranıyor..."):
 df_result = pd.DataFrame(rows)
 
 if df_result.empty:
-    st.error("Sonuç üretilemedi. Veri kaynağı cevap vermemiş olabilir.")
+    st.error("Sonuç üretilemedi. Veri kaynağı cevap vermemiş olabilir veya seçili periyotta yeterli veri yok.")
 
 else:
     df_result = df_result.sort_values("Elmas Skoru", ascending=False)
@@ -433,6 +510,9 @@ else:
 
     if show_only_elmas:
         filtered = filtered[filtered["Elmas"] == "Evet"]
+
+    if show_only_white_angel:
+        filtered = filtered[filtered["White Angel"] == "Evet"]
 
     st.subheader("Genel Durum")
 
@@ -453,6 +533,22 @@ else:
     with top_col4:
         elmas_count = len(df_result[df_result["Elmas"] == "Evet"])
         st.metric("Elmas Sinyali", elmas_count)
+
+    st.subheader("Aktif Periyot Ayarları")
+
+    ayar_col1, ayar_col2, ayar_col3, ayar_col4 = st.columns(4)
+
+    with ayar_col1:
+        st.metric("Kısa Ortalama", settings["fast_name"])
+
+    with ayar_col2:
+        st.metric("Orta Ortalama", settings["mid_name"])
+
+    with ayar_col3:
+        st.metric("Uzun Ortalama", settings["long_name"])
+
+    with ayar_col4:
+        st.metric("Veri Süresi", settings["data_period"])
 
     st.subheader("Screener")
 
@@ -487,7 +583,7 @@ else:
             st.metric("Dip Skoru", row["Dip Skoru"])
 
         with c5:
-            st.metric("Momentum 14 %", row["Momentum 14 %"])
+            st.metric("Momentum %", row["Momentum %"])
 
         with c6:
             st.metric("Sıkışma", row["Sıkışma"])
@@ -502,6 +598,9 @@ else:
 
         with c9:
             st.metric("Elmas", row["Elmas"])
+
+    else:
+        st.warning("Seçili hisse bu periyotta analiz edilemedi. Veri eksik olabilir.")
 
     st.subheader("Grafik")
     make_chart(selected_symbol)
