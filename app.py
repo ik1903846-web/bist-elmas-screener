@@ -81,11 +81,15 @@ interval = interval_map[interval_label]
 # =========================
 
 @st.cache_data(ttl=60 * 60)
+@st.cache_data(ttl=60 * 60)
 def get_data(symbol, interval):
     try:
+        # Aylıkta daha fazla yıl çekiyoruz ki 24 aylık/50 aylık yapılar rahat hesaplansın.
+        data_period = "10y" if interval == "1mo" else "5y"
+
         df = yf.download(
             symbol,
-            period="5y",
+            period=data_period,
             interval=interval,
             progress=False,
             auto_adjust=True,
