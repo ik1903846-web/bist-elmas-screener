@@ -215,9 +215,59 @@ else:
     filtered = df_result[df_result["Elmas Skoru"] >= min_score]
 
     st.subheader("Screener")
-    st.dataframe(filtered, use_container_width=True)
 
-    st.subheader("Grafik")
-    make_chart(selected_symbol)
+top_col1, top_col2, top_col3 = st.columns(3)
+
+with top_col1:
+    st.metric("Taranan Hisse", len(df_result))
+
+with top_col2:
+    st.metric("Filtrelenen", len(filtered))
+
+with top_col3:
+    if not filtered.empty:
+        st.metric("En Yüksek Skor", filtered["Elmas Skoru"].max())
+    else:
+        st.metric("En Yüksek Skor", "-")
+
+st.dataframe(
+    filtered,
+    use_container_width=True,
+    hide_index=True
+)
+
+st.subheader("Seçili Hisse Analizi")
+
+selected_clean = selected_symbol.replace(".IS", "")
+
+selected_row = df_result[df_result["Sembol"] == selected_clean]
+
+if not selected_row.empty:
+    row = selected_row.iloc[0]
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.metric("Fiyat", row["Fiyat"])
+
+    with c2:
+        st.metric("Elmas Skoru", row["Elmas Skoru"])
+
+    with c3:
+        st.metric("Cluster", row["Cluster"])
+
+    c4, c5, c6 = st.columns(3)
+
+    with c4:
+        st.metric("Dip Skoru", row["Dip Skoru"])
+
+    with c5:
+        st.metric("Momentum 14 %", row["Momentum 14 %"])
+
+    with c6:
+        st.metric("Sıkışma", row["Sıkışma"])
+
+st.subheader("Grafik")
+make_chart(selected_symbol)
 
 st.info("Bu uygulama yatırım tavsiyesi değildir. Sadece teknik tarama ve eğitim amaçlıdır.")
