@@ -22,24 +22,64 @@ st.caption("Dip bölgesi, sıkışma, momentum dönüşü ve trend teyidi arayan
 # SYMBOL LIST
 # =========================
 
-@st.cache_data(ttl=60 * 60)
+@st.cache_data(ttl=60 * 60 * 12)
 def load_symbols():
+    """
+    Öncelik sırası:
+    1. KAP BIST şirketleri sayfasından güncel sembolleri çek
+    2. Olmazsa symbols.csv oku
+    3. O da olmazsa fallback liste kullan
+    """
+
+    fallback_symbols = [
+        "THYAO.IS", "ASELS.IS", "KCHOL.IS", "SISE.IS", "TUPRS.IS",
+        "AKBNK.IS", "GARAN.IS", "YKBNK.IS", "ISCTR.IS", "SAHOL.IS",
+        "SASA.IS", "HEKTS.IS", "EREGL.IS", "KRDMD.IS", "BIMAS.IS",
+        "FROTO.IS", "TOASO.IS", "DOAS.IS", "KONTR.IS", "ASTOR.IS"
+    ]
+
+    # 1) KAP'tan güncel BIST şirketlerini çekmeyi dene
+    try:
+        kap_url = "https://kap.org.tr/tr/bist-sirketler"
+
+        tables = pd.read_html(kap_url)
+
+        symbols = []
+
+        for table in tables:
+            for col in table.columns:
+                values = table[col].dropna().astype(str).tolist()
+
+                for value in values:
+                    value = value.strip().upper()
+
+                    # KAP sembolleri genelde 4-5 karakter. Örn: THYAO, ASELS, KCHOL
+                    # Sadece sembol gibi duran değerleri alıyoruz.
+                    if value.isalnum() and 3 <= len(value) <= 6:
+                        symbols.append(value + ".IS")
+
+        symbols = sorted(list(set(symbols)))
+
+        if len(symbols) > 100:
+            return symbols
+
+    except Exception:
+        pass
+
+    # 2) KAP çalışmazsa GitHub'daki symbols.csv dosyasını oku
     try:
         symbols_df = pd.read_csv("symbols.csv")
         symbols = symbols_df["symbol"].dropna().astype(str).tolist()
         symbols = [s.strip().upper() for s in symbols if s.strip()]
-        return symbols
+
+        if len(symbols) > 0:
+            return symbols
+
     except Exception:
-        return [
-            "THYAO.IS", "ASELS.IS", "KCHOL.IS", "SISE.IS", "TUPRS.IS",
-            "AKBNK.IS", "GARAN.IS", "YKBNK.IS", "ISCTR.IS", "SAHOL.IS",
-            "SASA.IS", "HEKTS.IS", "EREGL.IS", "KRDMD.IS", "BIMAS.IS",
-            "FROTO.IS", "TOASO.IS", "DOAS.IS", "KONTR.IS", "ASTOR.IS",
-            "PASEU.IS", "ALARK.IS", "ENKAI.IS", "PETKM.IS", "KOZAL.IS",
-            "PGSUS.IS", "TAVHL.IS", "TCELL.IS", "TTKOM.IS", "OYAKC.IS",
-            "GUBRF.IS", "ODAS.IS", "CANTE.IS", "SMRTG.IS", "GESAN.IS",
-            "KCAER.IS", "CWENE.IS", "MIATK.IS", "EUPWR.IS", "QUAGR.IS"
-        ]
+        pass
+
+    # 3) Hiçbiri olmazsa küçük fallback liste
+    return fallback_symbols
 
 
 BIST_SYMBOLS = load_symbols()
