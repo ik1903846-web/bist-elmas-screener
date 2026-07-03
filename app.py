@@ -71,7 +71,32 @@ def calculate_indicators(df):
     data["Range20"] = (
         data["High"].rolling(20).max() - data["Low"].rolling(20).min()
     ) / data["Close"]
+    data["DipScoreRaw"] = 100 - (((data["Close"] - data["Lower"]) / data["Close"]) * 250)
+    data["DipScoreRaw"] = data["DipScoreRaw"].clip(0, 100)
 
+    data["SqueezeScoreRaw"] = 100 - (data["Range20"] * 250)
+    data["SqueezeScoreRaw"] = data["SqueezeScoreRaw"].clip(0, 100)
+
+    data["MA14Up"] = data["MA14"] > data["MA14"].shift(1)
+
+    data["DipSignal"] = (
+        (data["DipScoreRaw"] >= 65) &
+        (data["Close"] <= data["MA50"] * 1.15)
+    )
+
+    data["MomentumSignal"] = (
+        (data["Close"] > data["MA14"]) &
+        (data["MA14Up"]) &
+        (data["Momentum14"] > 0)
+    )
+
+    data["ElmasSignal"] = (
+        (data["DipScoreRaw"] >= 60) &
+        (data["SqueezeScoreRaw"] >= 45) &
+        (data["Momentum14"] > 0) &
+        (data["Close"] > data["MA14"]) &
+        (data["MA14Up"])
+    )
     return data
 
 
@@ -80,7 +105,70 @@ def analyze_symbol(symbol):
 
     if df.empty or len(df) < 220:
         return None
+def make_chart(symbol):
+    df = get_data(symbol, interval)
 
+    if df.empty:
+        st.warning("Veri alınamadı.")
+        return
+
+    df = calculate_indicators(df).dropna()
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df["Open"],
+        high=df["High"],
+        low=df["Low"],
+        close=df["Close"],
+        name="Fiyat"
+    ))
+
+    fig.add_trace(go.Scatter(x=df.index, y=df["MA14"], name="MA14"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["MA50"], name="MA50"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["MA200"], name="MA200"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["Upper"], name="Üst Bant"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["Lower"], name="Alt Bant"))
+
+    dip_points = df[df["DipSignal"]]
+    momentum_points = df[df["MomentumSignal"]]
+    elmas_points = df[df["ElmasSignal"]]
+
+    fig.add_trace(go.Scatter(
+        x=dip_points.index,
+        y=dip_points["Low"] * 0.98,
+        mode="markers",
+        name="Dip",
+        marker=dict(size=9, symbol="circle")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=momentum_points.index,
+        y=momentum_points["Low"] * 0.96,
+        mode="markers",
+        name="Momentum",
+        marker=dict(size=10, symbol="triangle-up")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=elmas_points.index,
+        y=elmas_points["Low"] * 0.94,
+        mode="markers+text",
+        name="Elmas",
+        text=["Elmas"] * len(elmas_points),
+        textposition="bottom center",
+        marker=dict(size=13, symbol="diamond")
+    ))
+
+    fig.update_layout(
+        height=650,
+        xaxis_rangeslider_visible=False,
+        template="plotly_dark",
+        title=symbol.replace(".IS", "")
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
     df = calculate_indicators(df)
     last = df.iloc[-1]
     prev = df.iloc[-2]
