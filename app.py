@@ -186,7 +186,7 @@ def get_period_settings(selected_interval):
             "range_len": 20,
             "momentum_len": 14,
             "scan_bars": 52,
-            "min_bars": 220,
+            "min_bars": 60,
             "fast_name": "MA14",
             "mid_name": "MA50",
             "long_name": "MA200",
